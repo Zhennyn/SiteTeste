@@ -346,7 +346,7 @@ function App() {
                         <Star size={14} fill="currentColor" />
                         <Star size={14} fill="currentColor" />
                       </div>
-                      <span className="text-gray-400">Mais de 2.000 clientes satisfeitos</span>
+                      <span className="text-gray-400">Mais de 200 clientes satisfeitos</span>
                     </div>
                   </div>
                 </div>
