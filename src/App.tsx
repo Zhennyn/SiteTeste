@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   Phone, 
   MapPin, 
@@ -429,7 +429,7 @@ function App() {
                 </div>
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-                  {fullMenuData[0].items.slice(0, 3).map((item, i) => (
+                  {fullMenuData[0].items.slice(0, 3).map((item: any, i) => (
                     <div key={i} className={`group bg-dark-surface rounded-2xl overflow-hidden border border-white/5 hover:border-pizza-red/50 transition-all hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(229,57,53,0.15)] flex flex-col animate-fade-in-up delay-${(i+1)*100}`}>
                       <div className="h-56 overflow-hidden relative">
                         <img src={i === 0 ? "/menu_margherita.png" : i === 1 ? "/hero_pizza.png" : "/menu_sweet.png"} alt={item.name} className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${i===1?'scale-125':''}`} />
