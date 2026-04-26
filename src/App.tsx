@@ -1046,6 +1046,14 @@ function App() {
                   href={generateWhatsAppLink()}
                   target="_blank"
                   rel="noopener noreferrer" 
+                  onClick={() => {
+                    setTimeout(() => {
+                      setCartItems([]);
+                      setIsCartOpen(false);
+                      setAddress({ cep: '', street: '', number: '', complement: '', neighborhood: '' });
+                      setPaymentMethod('');
+                    }, 500);
+                  }}
                   className="w-full bg-[#25D366] hover:bg-[#1ebd57] text-white py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-colors text-lg shadow-[0_10px_20px_rgba(37,211,102,0.3)] hover:-translate-y-1"
                 >
                   <MessageCircle size={24} />
