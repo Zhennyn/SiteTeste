@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Phone, 
   MapPin, 
@@ -101,8 +101,22 @@ function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'menu'>('home');
   
   // Cart State
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    const savedCart = localStorage.getItem('pizzaria_cart');
+    if (savedCart) {
+      try {
+        return JSON.parse(savedCart);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
   const [isCartOpen, setIsCartOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('pizzaria_cart', JSON.stringify(cartItems));
+  }, [cartItems]);
   
   // Product Modal State
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
