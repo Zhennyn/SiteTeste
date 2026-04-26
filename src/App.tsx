@@ -88,6 +88,8 @@ type CartItem = {
   name: string;
   category: string;
   size?: PizzaSize;
+  secondFlavor?: any;
+  observation?: string;
   border?: { name: string; price: number };
   quantity: number;
   basePrice: number;
@@ -107,6 +109,10 @@ function App() {
   const [modalSize, setModalSize] = useState<PizzaSize>('Grande');
   const [modalBorder, setModalBorder] = useState<any>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
+  const [isHalfAndHalf, setIsHalfAndHalf] = useState(false);
+  const [secondFlavor, setSecondFlavor] = useState<any>(null);
+  const [observation, setObservation] = useState('');
+  const [upsellDrinkName, setUpsellDrinkName] = useState('');
   const [address, setAddress] = useState({ cep: '', street: '', number: '', complement: '', neighborhood: '' });
   const [isFetchingCep, setIsFetchingCep] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -149,11 +155,18 @@ function App() {
   const generateWhatsAppLink = () => {
     let msg = `*NOVO PEDIDO* 🍕\n\n`;
     cartItems.forEach((item) => {
-      msg += `*${item.quantity}x ${item.name}*`;
+      if (item.secondFlavor) {
+        msg += `*${item.quantity}x 1/2 ${item.name}, 1/2 ${item.secondFlavor.name}*`;
+      } else {
+        msg += `*${item.quantity}x ${item.name}*`;
+      }
       if (item.size) msg += ` (${item.size})`;
       msg += `\n`;
       if (item.border) {
         msg += `   + Borda de ${item.border.name}\n`;
+      }
+      if (item.observation) {
+        msg += `   Obs: ${item.observation}\n`;
       }
       msg += `   ${formatPrice(item.totalPrice)}\n\n`;
     });
@@ -207,21 +220,30 @@ function App() {
     setModalSize('Grande');
     setModalBorder(null);
     setModalQuantity(1);
+    setIsHalfAndHalf(false);
+    setSecondFlavor(null);
+    setObservation('');
   };
 
   const addToCart = () => {
     if (!selectedProduct) return;
     
-    let basePriceStr = "";
+    let basePrice = 0;
     const isPizza = !!selectedProduct.prices;
     
     if (isPizza) {
-      basePriceStr = modalSize === 'Broto' ? selectedProduct.prices.broto : selectedProduct.prices.grande;
+      const p1Price = parsePrice(modalSize === 'Broto' ? selectedProduct.prices.broto : selectedProduct.prices.grande);
+      
+      if (isHalfAndHalf && secondFlavor) {
+        const p2Price = parsePrice(modalSize === 'Broto' ? secondFlavor.prices.broto : secondFlavor.prices.grande);
+        basePrice = Math.max(p1Price, p2Price);
+      } else {
+        basePrice = p1Price;
+      }
     } else {
-      basePriceStr = selectedProduct.price;
+      basePrice = parsePrice(selectedProduct.price);
     }
     
-    const basePrice = parsePrice(basePriceStr);
     const borderPrice = modalBorder ? parsePrice(modalBorder.price) : 0;
     
     const unitPrice = basePrice + borderPrice;
@@ -232,6 +254,8 @@ function App() {
       name: selectedProduct.name,
       category: selectedProduct.category,
       size: isPizza ? modalSize : undefined,
+      secondFlavor: (isHalfAndHalf && secondFlavor) ? secondFlavor : undefined,
+      observation: observation.trim(),
       border: modalBorder ? { name: modalBorder.name, price: borderPrice } : undefined,
       quantity: modalQuantity,
       basePrice: unitPrice,
@@ -694,6 +718,47 @@ function App() {
               {selectedProduct.prices && (
                 <>
                   <div>
+                    <h4 className="font-bold text-white mb-3">Como você quer sua pizza?</h4>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <button 
+                        onClick={() => { setIsHalfAndHalf(false); setSecondFlavor(null); }}
+                        className={`p-3 rounded-xl border ${!isHalfAndHalf ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'} transition-colors font-bold`}
+                      >
+                        Inteira
+                      </button>
+                      <button 
+                        onClick={() => setIsHalfAndHalf(true)}
+                        className={`p-3 rounded-xl border ${isHalfAndHalf ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'} transition-colors font-bold`}
+                      >
+                        Meio a Meio
+                      </button>
+                    </div>
+                    
+                    {isHalfAndHalf && (
+                      <div className="mb-4 animate-fade-in-up">
+                        <label className="block text-sm text-gray-400 mb-2">Escolha a 2ª Metade (Metade mais cara prevalece)</label>
+                        <select 
+                          className="w-full bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                          onChange={(e) => {
+                            const categoryItems = fullMenuData.find(cat => cat.category === selectedProduct.category)?.items || [];
+                            const flavor = categoryItems.find((p: any) => p.name === e.target.value);
+                            setSecondFlavor(flavor || null);
+                          }}
+                          value={secondFlavor?.name || ""}
+                        >
+                          <option value="" disabled>Selecione o sabor...</option>
+                          {fullMenuData.find(cat => cat.category === selectedProduct.category)?.items
+                            .filter((p: any) => p.name !== selectedProduct.name)
+                            .map((p: any, i: number) => (
+                              <option key={i} value={p.name}>{p.name}</option>
+                            ))
+                          }
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
                     <h4 className="font-bold text-white mb-3">Escolha o Tamanho</h4>
                     <div className="grid grid-cols-2 gap-3">
                       <button 
@@ -738,7 +803,7 @@ function App() {
               )}
 
               {/* Quantity */}
-              <div className="flex items-center justify-between bg-dark-bg p-4 rounded-xl border border-white/5">
+              <div className="flex items-center justify-between bg-dark-bg p-4 rounded-xl border border-white/5 mb-4">
                 <span className="font-bold text-white">Quantidade</span>
                 <div className="flex items-center gap-4">
                   <button onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 text-white">
@@ -749,6 +814,18 @@ function App() {
                     <Plus size={16} />
                   </button>
                 </div>
+              </div>
+
+              {/* Observation */}
+              <div>
+                <h4 className="font-bold text-white mb-3">Observações (Opcional)</h4>
+                <textarea 
+                  placeholder="Ex: tirar cebola, ponto da carne..."
+                  value={observation}
+                  onChange={(e) => setObservation(e.target.value)}
+                  rows={2}
+                  className="w-full bg-dark-surface border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-pizza-yellow resize-none"
+                />
               </div>
             </div>
 
@@ -794,13 +871,16 @@ function App() {
                     <div key={item.id} className="flex gap-4 border-b border-white/5 pb-6">
                       <div className="flex-grow">
                         <div className="flex justify-between items-start mb-1">
-                          <h4 className="font-bold text-white">{item.name}</h4>
+                          <h4 className="font-bold text-white">
+                            {item.secondFlavor ? `1/2 ${item.name}, 1/2 ${item.secondFlavor.name}` : item.name}
+                          </h4>
                           <button onClick={() => removeCartItem(item.id)} className="text-gray-500 hover:text-pizza-red">
                             <Trash2 size={18} />
                           </button>
                         </div>
                         {item.size && <p className="text-sm text-gray-400">Tamanho: {item.size}</p>}
                         {item.border && <p className="text-sm text-pizza-yellow/80">+ Borda de {item.border.name}</p>}
+                        {item.observation && <p className="text-sm text-gray-400 italic mt-1">Obs: {item.observation}</p>}
                         
                         <div className="flex justify-between items-center mt-4">
                           <div className="flex items-center gap-3 bg-dark-bg rounded-lg border border-white/5 p-1">
@@ -819,10 +899,55 @@ function App() {
                   ))}
                 </div>
               )}
-            </div>
 
-            {cartItems.length > 0 && (
-              <div className="p-6 border-t border-white/5 bg-dark-bg">
+              {cartItems.length > 0 && !cartItems.some(i => i.category === 'Bebidas') && (
+                <div className="p-4 mt-6 bg-dark-surface border border-pizza-yellow/30 rounded-xl flex flex-col gap-3 animate-pop-in relative overflow-hidden flex-shrink-0">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-pizza-yellow"></div>
+                  <div>
+                    <span className="block font-bold text-pizza-yellow text-lg mb-1">Faltou a bebida? 🥤</span>
+                    <span className="text-sm text-gray-400">Complete seu pedido escolhendo uma opção abaixo:</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                    <select 
+                      className="flex-grow w-full bg-dark-bg border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow text-sm appearance-none"
+                      value={upsellDrinkName}
+                      onChange={(e) => setUpsellDrinkName(e.target.value)}
+                    >
+                      <option value="" disabled>Escolha uma bebida...</option>
+                      {fullMenuData.find(cat => cat.category === "Bebidas")?.items.map((d: any, i) => (
+                        <option key={i} value={d.name}>{d.name} - {d.price}</option>
+                      ))}
+                    </select>
+                    <button 
+                      onClick={() => {
+                        if (upsellDrinkName) {
+                          const drink = fullMenuData.find(cat => cat.category === "Bebidas")?.items.find((d: any) => d.name === upsellDrinkName);
+                          if (drink) {
+                            const unitPrice = parsePrice(drink.price);
+                            const newItem: CartItem = {
+                              id: Math.random().toString(36).substr(2, 9),
+                              name: drink.name,
+                              category: "Bebidas",
+                              quantity: 1,
+                              basePrice: unitPrice,
+                              totalPrice: unitPrice,
+                            };
+                            setCartItems(prev => [...prev, newItem]);
+                            setUpsellDrinkName(""); // reset after adding
+                          }
+                        }
+                      }}
+                      disabled={!upsellDrinkName}
+                      className="bg-pizza-yellow text-dark-bg font-bold px-6 py-3 rounded-lg hover:bg-yellow-400 transition-colors text-sm disabled:opacity-50 sm:w-auto w-full flex-shrink-0"
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {cartItems.length > 0 && (
+                <div className="mt-8 border-t border-white/5 pt-6">
                 <div className="mb-6 space-y-3">
                   <h4 className="font-bold text-white mb-2">Endereço de Entrega (Opcional)</h4>
                   <div className="grid grid-cols-3 gap-3">
@@ -893,11 +1018,16 @@ function App() {
                     />
                   )}
                 </div>
-
-                <div className="flex justify-between items-center mb-6 pt-4 border-t border-white/5">
-                  <span className="text-gray-400">Total do Pedido</span>
-                  <span className="text-2xl font-extrabold text-white">{formatPrice(cartTotal)}</span>
                 </div>
+              )}
+            </div>
+
+            {cartItems.length > 0 && (
+              <div className="p-6 border-t border-white/5 bg-dark-bg flex-shrink-0">
+                  <div className="flex justify-between items-center mb-6">
+                    <span className="text-gray-400">Total do Pedido</span>
+                    <span className="text-2xl font-extrabold text-white">{formatPrice(cartTotal)}</span>
+                  </div>
                 <a 
                   href={generateWhatsAppLink()}
                   target="_blank"
