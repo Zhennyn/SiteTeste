@@ -13,7 +13,8 @@ import {
   ShoppingBag,
   Plus,
   Minus,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 
 const InstagramIcon = ({ size = 24, className = '' }) => (
@@ -106,8 +107,37 @@ function App() {
   const [modalSize, setModalSize] = useState<PizzaSize>('Grande');
   const [modalBorder, setModalBorder] = useState<any>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
+  const [address, setAddress] = useState({ cep: '', street: '', number: '', complement: '', neighborhood: '' });
+  const [isFetchingCep, setIsFetchingCep] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [changeFor, setChangeFor] = useState('');
 
   const whatsappNumber = "5511962900705";
+
+  const fetchCep = async (cepStr: string) => {
+    const cleanCep = cepStr.replace(/\D/g, '');
+    setAddress(prev => ({ ...prev, cep: cepStr }));
+    
+    if (cleanCep.length === 8) {
+      setIsFetchingCep(true);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+        const data = await response.json();
+        
+        if (!data.erro) {
+          setAddress(prev => ({
+            ...prev,
+            street: data.logradouro || prev.street,
+            neighborhood: data.bairro || prev.neighborhood
+          }));
+        }
+      } catch (error) {
+        console.error("Erro ao buscar CEP:", error);
+      } finally {
+        setIsFetchingCep(false);
+      }
+    }
+  };
 
   // Helpers
   const cartTotal = cartItems.reduce((acc, item) => acc + item.totalPrice, 0);
@@ -127,7 +157,24 @@ function App() {
       }
       msg += `   ${formatPrice(item.totalPrice)}\n\n`;
     });
-    msg += `*Total do Pedido: ${formatPrice(cartTotal)}*\n`;
+    msg += `*Total do Pedido: ${formatPrice(cartTotal)}*\n\n`;
+    
+    if (address.street) {
+      msg += `*Endereço de Entrega:*\n`;
+      msg += `${address.street}, ${address.number}`;
+      if (address.complement) msg += ` - ${address.complement}`;
+      if (address.neighborhood) msg += `\nBairro: ${address.neighborhood}`;
+    } else {
+      msg += `*Retirada no Balcão*`;
+    }
+    
+    if (paymentMethod) {
+      msg += `\n\n*Forma de Pagamento:* ${paymentMethod}`;
+      if (paymentMethod === 'Dinheiro' && changeFor) {
+        msg += ` (Troco para R$ ${changeFor})`;
+      }
+    }
+    
     return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -776,7 +823,78 @@ function App() {
 
             {cartItems.length > 0 && (
               <div className="p-6 border-t border-white/5 bg-dark-bg">
-                <div className="flex justify-between items-center mb-6">
+                <div className="mb-6 space-y-3">
+                  <h4 className="font-bold text-white mb-2">Endereço de Entrega (Opcional)</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-1 relative">
+                      {isFetchingCep && <Loader2 size={16} className="absolute right-3 top-4 animate-spin text-pizza-yellow" />}
+                      <input 
+                        type="text" 
+                        placeholder="CEP" 
+                        value={address.cep}
+                        onChange={(e) => fetchCep(e.target.value)}
+                        maxLength={9}
+                        className="w-full bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                      />
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder="Rua / Avenida" 
+                      value={address.street}
+                      onChange={(e) => setAddress({...address, street: e.target.value})}
+                      className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    <input 
+                      type="text" 
+                      placeholder="Nº" 
+                      value={address.number}
+                      onChange={(e) => setAddress({...address, number: e.target.value})}
+                      className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Complemento" 
+                      value={address.complement}
+                      onChange={(e) => setAddress({...address, complement: e.target.value})}
+                      className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Bairro" 
+                      value={address.neighborhood}
+                      onChange={(e) => setAddress({...address, neighborhood: e.target.value})}
+                      className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-6 space-y-3">
+                  <h4 className="font-bold text-white mb-2">Forma de Pagamento</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    {['Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro'].map(method => (
+                      <button 
+                        key={method}
+                        onClick={() => setPaymentMethod(method)}
+                        className={`p-3 rounded-xl border text-sm font-bold transition-colors ${paymentMethod === method ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'}`}
+                      >
+                        {method}
+                      </button>
+                    ))}
+                  </div>
+                  {paymentMethod === 'Dinheiro' && (
+                    <input 
+                       type="text" 
+                       placeholder="Troco para quanto? (Ex: 50)" 
+                       value={changeFor}
+                       onChange={(e) => setChangeFor(e.target.value)}
+                       className="w-full mt-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                    />
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center mb-6 pt-4 border-t border-white/5">
                   <span className="text-gray-400">Total do Pedido</span>
                   <span className="text-2xl font-extrabold text-white">{formatPrice(cartTotal)}</span>
                 </div>
