@@ -935,7 +935,7 @@ function App() {
                     <button 
                       onClick={() => {
                         if (upsellDrinkName) {
-                          const drink = fullMenuData.find(cat => cat.category === "Bebidas")?.items.find((d: any) => d.name === upsellDrinkName);
+                          const drink = fullMenuData.find(cat => cat.category === "Bebidas")?.items.find((d: any) => d.name === upsellDrinkName) as any;
                           if (drink) {
                             const unitPrice = parsePrice(drink.price);
                             const newItem: CartItem = {
