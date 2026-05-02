@@ -105,7 +105,7 @@ export const useStoreStatus = (): StoreStatusHook => {
     });
   };
 
-  const calculateShipping = useCallback(async (userCoords?: Coordinates): Promise<{ shippingPrice: number; distance: string }> => {
+  const calculateShipping = useCallback(async (userCoords?: Coordinates): Promise<{ shippingPrice: number; distance: string; coordsUsed: Coordinates }> => {
     try {
       setError(null); // Reseta erros antes de calcular
 
