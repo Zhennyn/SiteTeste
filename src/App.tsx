@@ -118,19 +118,7 @@ function App() {
   // Store Status and Shipping
   const { shippingPrice, distance, calculateShipping } = useStoreStatus();
 
-  // Get user's geolocation and calculate shipping on mount
-  useEffect(() => {
-    const initLocation = async () => {
-      try {
-        // O próprio Hook vai buscar a localização se não passarmos nada
-        await calculateShipping();
-      } catch (err) {
-        console.error("Erro ao obter localização:", err);
-      }
-    };
-
-    initLocation();
-  }, [calculateShipping]);
+  // O cálculo do frete agora ocorrerá exclusivamente quando o cliente preencher o CEP no fetchCep.
 
   useEffect(() => {
     localStorage.setItem('pizzaria_cart', JSON.stringify(cartItems));
