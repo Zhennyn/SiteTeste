@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { 
-  Phone, 
-  MapPin, 
-  Clock, 
-  Star, 
-  ChevronRight, 
-  Pizza, 
+import {
+  Phone,
+  MapPin,
+  Clock,
+  Star,
+  ChevronRight,
+  Pizza,
   MessageCircle,
   Menu as MenuIcon,
   X,
@@ -16,12 +16,13 @@ import {
   Trash2,
   Loader2
 } from 'lucide-react';
+import { useStoreStatus } from './hooks/useStoreStatus';
 
 const InstagramIcon = ({ size = 24, className = '' }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+    <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+    <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
   </svg>
 );
 
@@ -99,7 +100,7 @@ type CartItem = {
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'menu'>('home');
-  
+
   // Cart State
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     const savedCart = localStorage.getItem('pizzaria_cart');
@@ -114,10 +115,30 @@ function App() {
   });
   const [isCartOpen, setIsCartOpen] = useState(false);
 
+  // Store Status and Shipping
+  const { isOpen, shippingPrice, distance, error: storeError, calculateShipping } = useStoreStatus();
+  const [locationLoading, setLocationLoading] = useState<boolean>(false);
+
+  // Get user's geolocation and calculate shipping on mount
+  useEffect(() => {
+    const initLocation = async () => {
+      setLocationLoading(true);
+      try {
+        await calculateShipping(); // O próprio Hook vai buscar a localização se não passarmos nada
+      } catch (err) {
+        console.error("Erro ao obter localização:", err);
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+    initLocation();
+  }, [calculateShipping]);
+
   useEffect(() => {
     localStorage.setItem('pizzaria_cart', JSON.stringify(cartItems));
   }, [cartItems]);
-  
+
   // Product Modal State
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [modalSize, setModalSize] = useState<PizzaSize>('Grande');
@@ -137,19 +158,38 @@ function App() {
   const fetchCep = async (cepStr: string) => {
     const cleanCep = cepStr.replace(/\D/g, '');
     setAddress(prev => ({ ...prev, cep: cepStr }));
-    
+
     if (cleanCep.length === 8) {
       setIsFetchingCep(true);
       try {
         const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
         const data = await response.json();
-        
+
         if (!data.erro) {
           setAddress(prev => ({
             ...prev,
             street: data.logradouro || prev.street,
             neighborhood: data.bairro || prev.neighborhood
           }));
+
+          // Busca as coordenadas do endereço retornado pelo ViaCEP usando a API gratuita do OpenStreetMap
+          try {
+            const addressQuery = `${data.logradouro}, ${data.localidade}, ${data.uf}, Brasil`;
+            const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressQuery)}`);
+            const geoData = await geoResponse.json();
+
+            if (geoData && geoData.length > 0) {
+              const lat = parseFloat(geoData[0].lat);
+              const lon = parseFloat(geoData[0].lon);
+
+              // Dispara o Hook para recalcular o frete com as coordenadas do CEP digitado!
+              await calculateShipping({ latitude: lat, longitude: lon });
+            } else {
+              console.warn("Endereço não encontrado no mapa para calcular o frete.");
+            }
+          } catch (geoError) {
+            console.error("Erro ao buscar coordenadas do mapa:", geoError);
+          }
         }
       } catch (error) {
         console.error("Erro ao buscar CEP:", error);
@@ -162,6 +202,7 @@ function App() {
   // Helpers
   const cartTotal = cartItems.reduce((acc, item) => acc + item.totalPrice, 0);
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const totalWithShipping = cartTotal + shippingPrice;
 
   const parsePrice = (priceStr: string) => parseFloat(priceStr.replace('R$ ', '').replace(',', '.'));
   const formatPrice = (priceNum: number) => `R$ ${priceNum.toFixed(2).replace('.', ',')}`;
@@ -184,8 +225,11 @@ function App() {
       }
       msg += `   ${formatPrice(item.totalPrice)}\n\n`;
     });
-    msg += `*Total do Pedido: ${formatPrice(cartTotal)}*\n\n`;
-    
+    msg += `*Subtotal: ${formatPrice(cartTotal)}*\n`;
+    msg += `*Frete: ${formatPrice(shippingPrice)}*\n`;
+    msg += `*Distância: ${distance}*\n\n`;
+    msg += `*Total com Frete: ${formatPrice(totalWithShipping)}*\n\n`;
+
     if (address.street) {
       msg += `*Endereço de Entrega:*\n`;
       msg += `${address.street}, ${address.number}`;
@@ -194,14 +238,14 @@ function App() {
     } else {
       msg += `*Retirada no Balcão*`;
     }
-    
+
     if (paymentMethod) {
       msg += `\n\n*Forma de Pagamento:* ${paymentMethod}`;
       if (paymentMethod === 'Dinheiro' && changeFor) {
         msg += ` (Troco para R$ ${changeFor})`;
       }
     }
-    
+
     return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -241,13 +285,13 @@ function App() {
 
   const addToCart = () => {
     if (!selectedProduct) return;
-    
+
     let basePrice = 0;
     const isPizza = !!selectedProduct.prices;
-    
+
     if (isPizza) {
       const p1Price = parsePrice(modalSize === 'Broto' ? selectedProduct.prices.broto : selectedProduct.prices.grande);
-      
+
       if (isHalfAndHalf && secondFlavor) {
         const p2Price = parsePrice(modalSize === 'Broto' ? secondFlavor.prices.broto : secondFlavor.prices.grande);
         basePrice = Math.max(p1Price, p2Price);
@@ -257,9 +301,9 @@ function App() {
     } else {
       basePrice = parsePrice(selectedProduct.price);
     }
-    
+
     const borderPrice = modalBorder ? parsePrice(modalBorder.price) : 0;
-    
+
     const unitPrice = basePrice + borderPrice;
     const totalPrice = unitPrice * modalQuantity;
 
@@ -307,16 +351,16 @@ function App() {
               Do Baixinho
             </span>
           </button>
-          
+
           <nav className="hidden md:flex gap-8 font-medium items-center">
-            <button 
-              onClick={() => handleTabChange('home')} 
+            <button
+              onClick={() => handleTabChange('home')}
               className={`${activeTab === 'home' ? 'text-white' : 'text-gray-400'} hover:text-pizza-yellow hover:-translate-y-0.5 transition-all`}
             >
               Início
             </button>
-            <button 
-              onClick={() => handleTabChange('menu')} 
+            <button
+              onClick={() => handleTabChange('menu')}
               className={`${activeTab === 'menu' ? 'text-pizza-yellow font-bold' : 'text-gray-400'} hover:text-pizza-yellow hover:-translate-y-0.5 transition-all`}
             >
               Cardápio Completo
@@ -326,7 +370,7 @@ function App() {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsCartOpen(true)}
               className="relative p-2 text-white hover:text-pizza-yellow transition-colors hover:scale-110"
             >
@@ -337,12 +381,12 @@ function App() {
                 </span>
               )}
             </button>
-            <a 
+            <a
               href={generateWhatsAppLink()}
               target="_blank"
-              rel="noopener noreferrer" 
+              rel="noopener noreferrer"
               onClick={(e) => {
-                if(cartItems.length === 0) {
+                if (cartItems.length === 0) {
                   e.preventDefault();
                   alert("Adicione itens ao carrinho primeiro!");
                 }
@@ -354,7 +398,7 @@ function App() {
             </a>
           </div>
 
-          <button 
+          <button
             className="md:hidden text-white"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
           >
@@ -369,7 +413,7 @@ function App() {
             <button onClick={() => handleTabChange('menu')} className={`text-left py-2 text-lg font-medium ${activeTab === 'menu' ? 'text-pizza-yellow' : 'hover:text-pizza-yellow'}`}>Cardápio Completo</button>
             <button onClick={() => scrollToSection('promocoes')} className="text-left py-2 text-lg font-medium hover:text-pizza-yellow text-gray-300">Promoções</button>
             <button onClick={() => scrollToSection('sobre')} className="text-left py-2 text-lg font-medium hover:text-pizza-yellow text-gray-300">Sobre</button>
-            <button 
+            <button
               onClick={() => { setIsCartOpen(true); setIsMenuOpen(false); }}
               className="bg-dark-bg text-white text-center py-3 rounded-xl font-bold flex items-center justify-center gap-2"
             >
@@ -402,13 +446,13 @@ function App() {
                     Sabor inesquecível, borda recheada perfeita e entrega mais rápida que você já viu. Monte seu pedido agora!
                   </p>
                   <div className="flex flex-col sm:flex-row gap-4 mt-4 justify-center md:justify-start animate-fade-in-up delay-400">
-                    <button 
+                    <button
                       onClick={() => handleTabChange('menu')}
                       className="bg-pizza-red hover:bg-pizza-red-dark text-white px-8 py-4 rounded-xl font-bold text-lg transition-all hover:-translate-y-1 shadow-[0_10px_20px_rgba(229,57,53,0.3)] flex items-center justify-center gap-2"
                     >
                       Ver Cardápio
                     </button>
-                    <button 
+                    <button
                       onClick={() => setIsCartOpen(true)}
                       className="bg-dark-surface border border-white/10 hover:border-pizza-yellow hover:text-pizza-yellow text-white px-8 py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 group hover:shadow-[0_10px_20px_rgba(255,183,77,0.2)] hover:-translate-y-1"
                     >
@@ -416,7 +460,7 @@ function App() {
                       Ver Sacola ({cartCount})
                     </button>
                   </div>
-                  
+
                   <div className="flex items-center gap-4 mt-6 justify-center md:justify-start animate-fade-in-up delay-400">
                     <div className="flex -space-x-3">
                       <div className="w-10 h-10 rounded-full bg-gray-700 border-2 border-dark-bg flex items-center justify-center text-xs font-bold hover:-translate-y-2 transition-transform cursor-pointer">A</div>
@@ -435,13 +479,13 @@ function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="relative mt-8 md:mt-0 animate-pop-in">
                   <div className="absolute inset-0 bg-gradient-to-t from-dark-bg to-transparent z-10 hidden md:block h-20 bottom-0 mt-auto"></div>
                   <div className="animate-float">
-                    <img 
-                      src="/hero_pizza.png" 
-                      alt="Pizza deliciosa" 
+                    <img
+                      src="/hero_pizza.png"
+                      alt="Pizza deliciosa"
                       className="w-full h-auto object-cover rounded-3xl shadow-2xl relative z-0 md:scale-110 md:-right-8 animate-[spin_60s_linear_infinite]"
                       style={{ filter: 'drop-shadow(0px 20px 40px rgba(0,0,0,0.6))' }}
                     />
@@ -457,7 +501,7 @@ function App() {
                   <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Promoções Imperdíveis</h2>
                   <p className="text-pizza-yellow font-medium">Aproveite enquanto durar o estoque!</p>
                 </div>
-                
+
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Promo 1 */}
                   <div className="bg-gradient-to-br from-pizza-red to-pizza-orange rounded-2xl p-1 shadow-lg transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(229,57,53,0.3)] animate-fade-in-up delay-100">
@@ -470,7 +514,7 @@ function App() {
                           <span className="text-sm text-gray-400 line-through">De R$ 85,00</span>
                           <div className="text-3xl font-extrabold text-pizza-yellow">R$ 69,90</div>
                         </div>
-                        <button onClick={() => openProductModal({name: "Combo Casal", price: "R$ 69,90", desc: "1 Pizza Grande (Tradicional) + 1 Refrigerante 2L"}, "Promoção")} className="bg-white text-pizza-red hover:bg-gray-100 p-2 rounded-full transition-all hover:scale-110">
+                        <button onClick={() => openProductModal({ name: "Combo Casal", price: "R$ 69,90", desc: "1 Pizza Grande (Tradicional) + 1 Refrigerante 2L" }, "Promoção")} className="bg-white text-pizza-red hover:bg-gray-100 p-2 rounded-full transition-all hover:scale-110">
                           <Plus size={24} />
                         </button>
                       </div>
@@ -496,7 +540,7 @@ function App() {
                     <p className="text-gray-400 mb-6 flex-grow">3 Pizzas Grandes + 2 Refrigerantes 2L. Ideal para dividir com a galera!</p>
                     <div className="flex justify-between items-end">
                       <div className="text-3xl font-extrabold text-pizza-yellow">R$ 159,90</div>
-                      <button onClick={() => openProductModal({name: "Kit Festa", price: "R$ 159,90", desc: "3 Pizzas Grandes + 2 Refrigerantes 2L"}, "Promoção")} className="bg-pizza-red text-white hover:bg-pizza-red-dark px-4 py-2 rounded-lg font-medium transition-transform hover:scale-105">
+                      <button onClick={() => openProductModal({ name: "Kit Festa", price: "R$ 159,90", desc: "3 Pizzas Grandes + 2 Refrigerantes 2L" }, "Promoção")} className="bg-pizza-red text-white hover:bg-pizza-red-dark px-4 py-2 rounded-lg font-medium transition-transform hover:scale-105">
                         Adicionar
                       </button>
                     </div>
@@ -515,9 +559,9 @@ function App() {
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
                   {fullMenuData[0].items.slice(0, 3).map((item: any, i) => (
-                    <div key={i} className={`group bg-dark-surface rounded-2xl overflow-hidden border border-white/5 hover:border-pizza-red/50 transition-all hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(229,57,53,0.15)] flex flex-col animate-fade-in-up delay-${(i+1)*100}`}>
+                    <div key={i} className={`group bg-dark-surface rounded-2xl overflow-hidden border border-white/5 hover:border-pizza-red/50 transition-all hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(229,57,53,0.15)] flex flex-col animate-fade-in-up delay-${(i + 1) * 100}`}>
                       <div className="h-56 overflow-hidden relative">
-                        <img src={i === 0 ? "/menu_margherita.png" : i === 1 ? "/hero_pizza.png" : "/menu_sweet.png"} alt={item.name} className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${i===1?'scale-125':''}`} />
+                        <img src={i === 0 ? "/menu_margherita.png" : i === 1 ? "/hero_pizza.png" : "/menu_sweet.png"} alt={item.name} className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${i === 1 ? 'scale-125' : ''}`} />
                         {i === 0 && (
                           <div className="absolute top-3 right-3 bg-dark-bg/80 backdrop-blur-sm text-pizza-yellow px-3 py-1 rounded-full text-sm font-bold border border-pizza-yellow/30">
                             Mais Vendida
@@ -546,10 +590,10 @@ function App() {
                     </div>
                   ))}
                 </div>
-                
+
                 <div className="text-center animate-fade-in-up delay-400">
-                  <button 
-                    onClick={() => handleTabChange('menu')} 
+                  <button
+                    onClick={() => handleTabChange('menu')}
                     className="inline-flex items-center gap-2 bg-pizza-red hover:bg-pizza-red-dark text-white px-8 py-4 rounded-xl font-bold text-lg transition-all hover:-translate-y-1 shadow-[0_10px_20px_rgba(229,57,53,0.3)]"
                   >
                     Ver Cardápio Completo
@@ -567,7 +611,7 @@ function App() {
                   <p className="text-gray-400 mb-6 leading-relaxed">
                     Tudo começou com uma paixão por criar momentos felizes ao redor da mesa. A Pizzaria do Baixinho é um negócio local, nascido do desejo de oferecer uma pizza de qualidade superior.
                   </p>
-                  
+
                   <div className="space-y-4">
                     <div className="flex items-center gap-4 text-gray-300 bg-white/5 p-4 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
                       <div className="bg-pizza-red/20 p-3 rounded-lg text-pizza-red">
@@ -589,21 +633,21 @@ function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="relative animate-fade-in-up delay-200">
                   <div className="bg-gradient-to-tr from-dark-surface to-dark-bg p-8 rounded-3xl border border-white/10 shadow-2xl hover:shadow-[0_0_30px_rgba(255,183,77,0.15)] transition-shadow">
                     <h3 className="text-2xl font-bold text-white mb-6 text-center">Ficou com alguma dúvida?</h3>
                     <p className="text-center text-gray-400 mb-8">Nossa equipe está pronta para te atender rapidamente no WhatsApp.</p>
-                    <a 
+                    <a
                       href={`https://wa.me/${whatsappNumber}`}
                       target="_blank"
-                      rel="noopener noreferrer" 
+                      rel="noopener noreferrer"
                       className="w-full bg-[#25D366] hover:bg-[#1ebd57] text-white text-xl py-4 rounded-xl font-bold transition-all shadow-[0_10px_20px_rgba(37,211,102,0.3)] flex items-center justify-center gap-3 hover:-translate-y-1"
                     >
                       <Phone fill="currentColor" size={24} className="animate-pulse" />
                       Falar com Atendente
                     </a>
-                    
+
                     <div className="mt-8 pt-8 border-t border-white/10 text-center">
                       <p className="text-gray-400 mb-4">Siga-nos nas redes sociais</p>
                       <a href="https://www.instagram.com/apizzariadobaixinho" target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 text-white hover:scale-110 hover:rotate-12 transition-transform">
@@ -619,7 +663,7 @@ function App() {
           <section className="py-12 bg-dark-bg min-h-screen">
             <div className="container mx-auto px-4 max-w-4xl">
               <div className="flex items-center gap-4 mb-8 animate-fade-in-up">
-                <button 
+                <button
                   onClick={() => handleTabChange('home')}
                   className="p-2 bg-dark-surface hover:bg-white/10 text-gray-400 hover:text-white rounded-full transition-all hover:-translate-x-1 border border-white/10"
                 >
@@ -630,18 +674,18 @@ function App() {
 
               <div className="space-y-16">
                 {fullMenuData.map((section, idx) => (
-                  <div key={idx} className={`animate-fade-in-up delay-${(idx+1)*100}`}>
+                  <div key={idx} className={`animate-fade-in-up delay-${(idx + 1) * 100}`}>
                     <div className="flex items-center gap-4 mb-8">
                       <h3 className="text-3xl font-bold text-white">{section.category}</h3>
                       <div className="h-px bg-gradient-to-r from-pizza-red/50 to-transparent flex-grow"></div>
                     </div>
-                    
+
                     <div className="grid md:grid-cols-2 gap-4">
                       {section.items.map((item: any, itemIdx) => (
                         <div key={itemIdx} className="group bg-dark-surface p-5 rounded-xl border border-white/5 hover:border-pizza-yellow/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_20px_rgba(255,183,77,0.1)] flex flex-col">
                           <h4 className="text-xl font-bold text-white mb-2 group-hover:text-pizza-yellow transition-colors">{item.name}</h4>
                           {item.desc && <p className="text-gray-400 text-sm mb-4 flex-grow">{item.desc}</p>}
-                          
+
                           <div className="mt-auto pt-4 border-t border-white/5">
                             {item.prices ? (
                               <div className="flex justify-between items-center mb-4">
@@ -660,7 +704,7 @@ function App() {
                               </div>
                             )}
 
-                            <button 
+                            <button
                               onClick={() => openProductModal(item, section.category)}
                               className="w-full bg-pizza-red/10 text-pizza-red hover:bg-pizza-red hover:text-white py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors w-full group/btn"
                             >
@@ -692,7 +736,7 @@ function App() {
       </footer>
 
       {/* Floating Cart Button */}
-      <button 
+      <button
         onClick={() => setIsCartOpen(true)}
         className="fixed bottom-6 right-6 bg-pizza-red text-white p-4 px-6 rounded-full shadow-[0_0_20px_rgba(229,57,53,0.4)] hover:scale-105 hover:-translate-y-2 transition-all z-40 flex items-center justify-center gap-3 group animate-pop-in delay-300"
         aria-label="Ver Sacola"
@@ -722,7 +766,7 @@ function App() {
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto flex-grow space-y-6">
               {selectedProduct.desc && (
                 <p className="text-gray-400">{selectedProduct.desc}</p>
@@ -734,24 +778,24 @@ function App() {
                   <div>
                     <h4 className="font-bold text-white mb-3">Como você quer sua pizza?</h4>
                     <div className="grid grid-cols-2 gap-3 mb-4">
-                      <button 
+                      <button
                         onClick={() => { setIsHalfAndHalf(false); setSecondFlavor(null); }}
                         className={`p-3 rounded-xl border ${!isHalfAndHalf ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'} transition-colors font-bold`}
                       >
                         Inteira
                       </button>
-                      <button 
+                      <button
                         onClick={() => setIsHalfAndHalf(true)}
                         className={`p-3 rounded-xl border ${isHalfAndHalf ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'} transition-colors font-bold`}
                       >
                         Meio a Meio
                       </button>
                     </div>
-                    
+
                     {isHalfAndHalf && (
                       <div className="mb-4 animate-fade-in-up">
                         <label className="block text-sm text-gray-400 mb-2">Escolha a 2ª Metade (Metade mais cara prevalece)</label>
-                        <select 
+                        <select
                           className="w-full bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
                           onChange={(e) => {
                             const categoryItems = fullMenuData.find(cat => cat.category === selectedProduct.category)?.items || [];
@@ -775,14 +819,14 @@ function App() {
                   <div>
                     <h4 className="font-bold text-white mb-3">Escolha o Tamanho</h4>
                     <div className="grid grid-cols-2 gap-3">
-                      <button 
+                      <button
                         onClick={() => setModalSize('Broto')}
                         className={`p-3 rounded-xl border ${modalSize === 'Broto' ? 'border-pizza-yellow bg-pizza-yellow/10' : 'border-white/10 bg-white/5'} transition-colors flex flex-col items-center justify-center gap-1`}
                       >
                         <span className="font-bold text-white">Broto</span>
                         <span className="text-pizza-yellow text-sm">{selectedProduct.prices.broto}</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => setModalSize('Grande')}
                         className={`p-3 rounded-xl border ${modalSize === 'Grande' ? 'border-pizza-yellow bg-pizza-yellow/10' : 'border-white/10 bg-white/5'} transition-colors flex flex-col items-center justify-center gap-1`}
                       >
@@ -795,14 +839,14 @@ function App() {
                   <div>
                     <h4 className="font-bold text-white mb-3">Borda Recheada (Opcional)</h4>
                     <div className="space-y-2">
-                      <button 
+                      <button
                         onClick={() => setModalBorder(null)}
                         className={`w-full p-3 rounded-xl border text-left flex justify-between items-center ${modalBorder === null ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-white/5 text-gray-400'}`}
                       >
                         <span>Sem Borda</span>
                       </button>
                       {bordersData.map((b, i) => (
-                        <button 
+                        <button
                           key={i}
                           onClick={() => setModalBorder(b)}
                           className={`w-full p-3 rounded-xl border text-left flex justify-between items-center ${modalBorder?.name === b.name ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-white/5 text-gray-400'}`}
@@ -833,7 +877,7 @@ function App() {
               {/* Observation */}
               <div>
                 <h4 className="font-bold text-white mb-3">Observações (Opcional)</h4>
-                <textarea 
+                <textarea
                   placeholder="Ex: tirar cebola, ponto da carne..."
                   value={observation}
                   onChange={(e) => setObservation(e.target.value)}
@@ -844,7 +888,7 @@ function App() {
             </div>
 
             <div className="p-6 border-t border-white/5 bg-dark-bg">
-              <button 
+              <button
                 onClick={addToCart}
                 className="w-full bg-green-500 hover:bg-green-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors text-lg"
               >
@@ -895,7 +939,7 @@ function App() {
                         {item.size && <p className="text-sm text-gray-400">Tamanho: {item.size}</p>}
                         {item.border && <p className="text-sm text-pizza-yellow/80">+ Borda de {item.border.name}</p>}
                         {item.observation && <p className="text-sm text-gray-400 italic mt-1">Obs: {item.observation}</p>}
-                        
+
                         <div className="flex justify-between items-center mt-4">
                           <div className="flex items-center gap-3 bg-dark-bg rounded-lg border border-white/5 p-1">
                             <button onClick={() => updateCartQuantity(item.id, -1)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 text-white">
@@ -922,7 +966,7 @@ function App() {
                     <span className="text-sm text-gray-400">Complete seu pedido escolhendo uma opção abaixo:</span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 mt-1">
-                    <select 
+                    <select
                       className="flex-grow w-full bg-dark-bg border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow text-sm appearance-none"
                       value={upsellDrinkName}
                       onChange={(e) => setUpsellDrinkName(e.target.value)}
@@ -932,7 +976,7 @@ function App() {
                         <option key={i} value={d.name}>{d.name} - {d.price}</option>
                       ))}
                     </select>
-                    <button 
+                    <button
                       onClick={() => {
                         if (upsellDrinkName) {
                           const drink = fullMenuData.find(cat => cat.category === "Bebidas")?.items.find((d: any) => d.name === upsellDrinkName) as any;
@@ -962,90 +1006,102 @@ function App() {
 
               {cartItems.length > 0 && (
                 <div className="mt-8 border-t border-white/5 pt-6">
-                <div className="mb-6 space-y-3">
-                  <h4 className="font-bold text-white mb-2">Endereço de Entrega (Opcional)</h4>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-1 relative">
-                      {isFetchingCep && <Loader2 size={16} className="absolute right-3 top-4 animate-spin text-pizza-yellow" />}
-                      <input 
-                        type="text" 
-                        placeholder="CEP" 
-                        value={address.cep}
-                        onChange={(e) => fetchCep(e.target.value)}
-                        maxLength={9}
-                        className="w-full bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                  <div className="mb-6 space-y-3">
+                    <h4 className="font-bold text-white mb-2">Endereço de Entrega (Opcional)</h4>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-1 relative">
+                        {isFetchingCep && <Loader2 size={16} className="absolute right-3 top-4 animate-spin text-pizza-yellow" />}
+                        <input
+                          type="text"
+                          placeholder="CEP"
+                          value={address.cep}
+                          onChange={(e) => fetchCep(e.target.value)}
+                          maxLength={9}
+                          className="w-full bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Rua / Avenida"
+                        value={address.street}
+                        onChange={(e) => setAddress({ ...address, street: e.target.value })}
+                        className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
                       />
                     </div>
-                    <input 
-                      type="text" 
-                      placeholder="Rua / Avenida" 
-                      value={address.street}
-                      onChange={(e) => setAddress({...address, street: e.target.value})}
-                      className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
-                    />
+                    <div className="grid grid-cols-4 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Nº"
+                        value={address.number}
+                        onChange={(e) => setAddress({ ...address, number: e.target.value })}
+                        className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Complemento"
+                        value={address.complement}
+                        onChange={(e) => setAddress({ ...address, complement: e.target.value })}
+                        className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Bairro"
+                        value={address.neighborhood}
+                        onChange={(e) => setAddress({ ...address, neighborhood: e.target.value })}
+                        className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                      />
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-3">
-                    <input 
-                      type="text" 
-                      placeholder="Nº" 
-                      value={address.number}
-                      onChange={(e) => setAddress({...address, number: e.target.value})}
-                      className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Complemento" 
-                      value={address.complement}
-                      onChange={(e) => setAddress({...address, complement: e.target.value})}
-                      className="col-span-1 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Bairro" 
-                      value={address.neighborhood}
-                      onChange={(e) => setAddress({...address, neighborhood: e.target.value})}
-                      className="col-span-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
-                    />
-                  </div>
-                </div>
 
-                <div className="mb-6 space-y-3">
-                  <h4 className="font-bold text-white mb-2">Forma de Pagamento</h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    {['Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro'].map(method => (
-                      <button 
-                        key={method}
-                        onClick={() => setPaymentMethod(method)}
-                        className={`p-3 rounded-xl border text-sm font-bold transition-colors ${paymentMethod === method ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'}`}
-                      >
-                        {method}
-                      </button>
-                    ))}
+                  <div className="mb-6 space-y-3">
+                    <h4 className="font-bold text-white mb-2">Forma de Pagamento</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro'].map(method => (
+                        <button
+                          key={method}
+                          onClick={() => setPaymentMethod(method)}
+                          className={`p-3 rounded-xl border text-sm font-bold transition-colors ${paymentMethod === method ? 'border-pizza-yellow bg-pizza-yellow/10 text-white' : 'border-white/10 bg-dark-surface text-gray-400 hover:bg-white/5'}`}
+                        >
+                          {method}
+                        </button>
+                      ))}
+                    </div>
+                    {paymentMethod === 'Dinheiro' && (
+                      <input
+                        type="text"
+                        placeholder="Troco para quanto? (Ex: 50)"
+                        value={changeFor}
+                        onChange={(e) => setChangeFor(e.target.value)}
+                        className="w-full mt-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
+                      />
+                    )}
                   </div>
-                  {paymentMethod === 'Dinheiro' && (
-                    <input 
-                       type="text" 
-                       placeholder="Troco para quanto? (Ex: 50)" 
-                       value={changeFor}
-                       onChange={(e) => setChangeFor(e.target.value)}
-                       className="w-full mt-2 bg-dark-surface border border-white/10 rounded-lg p-3 text-white focus:outline-none focus:border-pizza-yellow"
-                    />
-                  )}
-                </div>
                 </div>
               )}
             </div>
 
             {cartItems.length > 0 && (
               <div className="p-6 border-t border-white/5 bg-dark-bg flex-shrink-0">
-                  <div className="flex justify-between items-center mb-6">
-                    <span className="text-gray-400">Total do Pedido</span>
-                    <span className="text-2xl font-extrabold text-white">{formatPrice(cartTotal)}</span>
-                  </div>
-                <a 
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-gray-400">Subtotal</span>
+                  <span className="text-xl font-bold text-white">{formatPrice(cartTotal)}</span>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-gray-400">Frete</span>
+                  <span className="text-xl font-bold text-pizza-yellow">{formatPrice(shippingPrice)}</span>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-gray-400">Distância</span>
+                  <span className="text-xl font-bold text-white">{distance}</span>
+                </div>
+                <div className="flex justify-between items-center mb-6">
+                  <span className="text-gray-400">Total com Frete</span>
+                  <span className="text-2xl font-extrabold text-white">{formatPrice(totalWithShipping)}</span>
+                </div>
+                <a
                   href={generateWhatsAppLink()}
                   target="_blank"
-                  rel="noopener noreferrer" 
+                  rel="noopener noreferrer"
                   onClick={() => {
                     setTimeout(() => {
                       setCartItems([]);
