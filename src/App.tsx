@@ -116,19 +116,37 @@ function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Store Status and Shipping
-  const { isOpen, shippingPrice, distance, error: storeError, calculateShipping } = useStoreStatus();
-  const [locationLoading, setLocationLoading] = useState<boolean>(false);
+  const { shippingPrice, distance, calculateShipping } = useStoreStatus();
 
   // Get user's geolocation and calculate shipping on mount
   useEffect(() => {
     const initLocation = async () => {
-      setLocationLoading(true);
       try {
-        await calculateShipping(); // O próprio Hook vai buscar a localização se não passarmos nada
+        // O próprio Hook vai buscar a localização se não passarmos nada
+        const result = await calculateShipping();
+        
+        // Geocodificação reversa: Pega as coordenadas do GPS e acha o endereço e CEP!
+        if (result && result.coordsUsed) {
+          const lat = result.coordsUsed.latitude;
+          const lon = result.coordsUsed.longitude;
+          try {
+            const reverseResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+            const reverseData = await reverseResponse.json();
+            
+            if (reverseData && reverseData.address) {
+              setAddress(prev => ({
+                ...prev,
+                cep: reverseData.address.postcode || prev.cep,
+                street: reverseData.address.road || prev.street,
+                neighborhood: reverseData.address.suburb || reverseData.address.neighbourhood || prev.neighborhood,
+              }));
+            }
+          } catch (geoError) {
+            console.error("Erro ao buscar endereço automático:", geoError);
+          }
+        }
       } catch (err) {
         console.error("Erro ao obter localização:", err);
-      } finally {
-        setLocationLoading(false);
       }
     };
 

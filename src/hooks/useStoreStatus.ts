@@ -10,7 +10,7 @@ export interface StoreStatusHook {
   shippingPrice: number;
   distance: string; // Ex: "5.2 km"
   error: string | null;
-  calculateShipping: (userCoords?: Coordinates) => Promise<{ shippingPrice: number; distance: string }>;
+  calculateShipping: (userCoords?: Coordinates) => Promise<{ shippingPrice: number; distance: string; coordsUsed: Coordinates }>;
 }
 
 export const useStoreStatus = (): StoreStatusHook => {
@@ -136,7 +136,7 @@ export const useStoreStatus = (): StoreStatusHook => {
       setDistance(formattedDistance);
       setShippingPrice(price);
 
-      return { shippingPrice: price, distance: formattedDistance };
+      return { shippingPrice: price, distance: formattedDistance, coordsUsed: coordsToUse };
     } catch (err: any) {
       const errorMessage = err.message || 'Erro ao calcular frete.';
       setError(errorMessage);
